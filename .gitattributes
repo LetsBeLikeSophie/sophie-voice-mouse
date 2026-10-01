@@ -1,0 +1,9 @@
+# Normalize line endings in the repository; check out native on each platform.
+* text=auto
+
+# Windows-only launchers must keep CRLF so cmd.exe reads them correctly.
+*.bat text eol=crlf
+
+# Keep LF for files consumed by tools that dislike CRLF.
+*.yml text eol=lf
+*.yaml text eol=lf
