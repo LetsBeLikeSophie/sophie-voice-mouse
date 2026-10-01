@@ -116,6 +116,11 @@ LLMHF_INJECTED = 0x01
 user32 = ctypes.windll.user32 if sys.platform == "win32" else None
 kernel32 = ctypes.windll.kernel32 if sys.platform == "win32" else None
 
+if user32:
+    # Without this, ctypes truncates window handles to a signed int
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    kernel32.GetConsoleWindow.restype = wintypes.HWND
+
 
 # ================= Text (Korean / English) =================
 STRINGS = {
@@ -135,6 +140,8 @@ STRINGS = {
         "heard": "  Heard: {text}",
         "cleaned": "  Cleaned: {text}",
         "done_log": "✓ Typed\n",
+        "paste_log": "  ↳ Pasted the stashed text ({count} item(s))",
+        "held_log": "※ This window had the focus, so nothing was typed. The text is kept — click where you want it, then tap the middle button.",
         "error_log": "Error: {e}",
         "key_invalid_runtime": "※ Your API key is invalid or expired. Typing the raw text instead.",
         "refine_failed": "※ Cleanup failed ({e}). Typing the raw text instead.",
@@ -146,6 +153,9 @@ STRINGS = {
         "ov_stash": "Text stashed",
         "ov_listen_sub": "{count} text(s) attached · {chars} chars",
         "ov_stash_sub": "{count} stashed · {chars} chars",
+        "ov_chip": "{count} stashed · tap to paste",
+        "ov_wait": "Click where you want it",
+        "ov_wait_sub": "…then tap the middle button",
         "ov_mic": "Can't open the microphone",
         "ov_short": "Too short",
         "ov_silent": "Didn't catch any speech",
@@ -183,6 +193,8 @@ STRINGS = {
         "heard": "  받아쓰기: {text}",
         "cleaned": "  정리 결과: {text}",
         "done_log": "✓ 입력 완료\n",
+        "paste_log": "  ↳ 담아둔 글 붙여넣음 ({count}개)",
+        "held_log": "※ 이 창이 선택되어 있어서 입력하지 않았어요. 글은 담아뒀으니, 입력할 창을 클릭하고 가운데 버튼을 톡 하세요.",
         "error_log": "오류: {e}",
         "key_invalid_runtime": "※ API 키가 만료됐거나 올바르지 않아요. 원문 그대로 입력할게요.",
         "refine_failed": "※ 정리 실패({e}). 원문 그대로 입력할게요.",
@@ -194,6 +206,9 @@ STRINGS = {
         "ov_stash": "글을 담았어요",
         "ov_listen_sub": "글 {count}개 같이 보냄 · {chars}자",
         "ov_stash_sub": "{count}개 담김 · {chars}자",
+        "ov_chip": "{count}개 담김 · 톡 하면 붙여넣기",
+        "ov_wait": "입력할 창을 클릭하세요",
+        "ov_wait_sub": "…그다음 가운데 버튼을 톡",
         "ov_mic": "마이크를 열 수 없어요",
         "ov_short": "녹음이 너무 짧아요",
         "ov_silent": "말소리가 안 들렸어요",
@@ -501,12 +516,16 @@ class Overlay:
         "done":   ("✓", "ov_done", "#22c55e"),
         "error":  ("!", "ov_error", "#ef4444"),
         "stash":  ("+", "ov_stash", "#3b82f6"),
+        "wait":   ("↓", "ov_wait", "#3b82f6"),
     }
 
     def __init__(self):
         import tkinter as tk
         self.q = queue.Queue()
         self.hide_token = 0
+        self.visible = False
+        self.chip_text = ""   # "" = nothing stashed, so the chip stays hidden
+        self.chip_on = False
 
         self.root = tk.Tk()
         self.root.overrideredirect(True)
@@ -529,12 +548,28 @@ class Overlay:
 
         self.root.geometry("+-2000+-2000")
         self.root.update_idletasks()
-        self._make_passive()
+        self._make_passive(self.root)
+
+        # A smaller chip that follows the cursor while text is stashed, so you can
+        # see at a glance that a tap will paste instead of middle-clicking.
+        chip_bg = "#1e3a8a"
+        self.chip = tk.Toplevel(self.root)
+        self.chip.overrideredirect(True)
+        self.chip.attributes("-topmost", True)
+        self.chip.attributes("-alpha", 0.0)
+        self.chip.configure(bg=chip_bg)
+        self.chip_label = tk.Label(self.chip, text="", bg=chip_bg, fg="#dbeafe",
+                                   font=(font, 9), padx=9, pady=4)
+        self.chip_label.pack()
+        self.chip.geometry("+-2000+-2000")
+        self.chip.update_idletasks()
+        self._make_passive(self.chip)
+
         self.root.after(50, self._poll)
 
-    def _make_passive(self):
+    def _make_passive(self, win):
         try:
-            hwnd = user32.GetParent(self.root.winfo_id())
+            hwnd = user32.GetParent(win.winfo_id())
             GWL_EXSTYLE = -20
             style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             # NOACTIVATE | TOOLWINDOW | TRANSPARENT (click-through) | LAYERED
@@ -547,17 +582,41 @@ class Overlay:
         """Safe to call from any thread."""
         self.q.put((state, sub))
 
+    def set_stash(self, text):
+        """Text for the cursor-side chip, or "" to hide it. Safe from any thread."""
+        self.q.put(("_chip", text))
+
     def _poll(self):
         try:
             while True:
                 self._apply(*self.q.get_nowait())
         except queue.Empty:
             pass
+        self._tick_chip()
         self.root.after(50, self._poll)
 
+    def _tick_chip(self):
+        """Keep the chip glued to the cursor, and out of the way of the main bubble."""
+        if not self.chip_text or self.visible:
+            if self.chip_on:
+                self.chip.attributes("-alpha", 0.0)
+                self.chip.geometry("+-2000+-2000")
+                self.chip_on = False
+            return
+        x, y = self.root.winfo_pointerxy()
+        self.chip.geometry(f"+{x + 18}+{y + 22}")
+        if not self.chip_on:
+            self.chip.attributes("-alpha", 0.90)
+            self.chip_on = True
+
     def _apply(self, state, sub):
+        if state == "_chip":
+            self.chip_text = sub
+            self.chip_label.config(text=sub)
+            return
         self.hide_token += 1
         if state == "hide":
+            self.visible = False
             self.root.attributes("-alpha", 0.0)
             self.root.geometry("+-2000+-2000")
             return
@@ -572,11 +631,12 @@ class Overlay:
             self.sub.pack(anchor="w")
         else:
             self.sub.pack_forget()
-        if state in ("listen", "stash"):
+        if state in ("listen", "stash", "wait"):
             x, y = self.root.winfo_pointerxy()
             self.root.geometry(f"+{x + 18}+{y + 22}")
         self.root.attributes("-alpha", 0.94)
-        if state in ("done", "error", "stash"):
+        self.visible = True
+        if state in ("done", "error", "stash", "wait"):
             token = self.hide_token
             self.root.after(1500, lambda: token == self.hide_token and self._apply("hide", ""))
 
@@ -692,11 +752,7 @@ class SophieVoiceMouse:
             if not press.get("mic_ok"):
                 return
 
-            with self.stash_lock:
-                if self.stash and time.time() - self.stash_time > STASH_EXPIRE_SEC:
-                    self.stash = []
-                items = list(self.stash)
-                self.stash = []
+            items = self._stash_take()
             current = self._grab_selection() if INCLUDE_SELECTION else ""
             # Don't re-attach text we just sent that's still highlighted
             if current and current not in items and current not in self.last_sent:
@@ -730,28 +786,60 @@ class SophieVoiceMouse:
         self.jobs.put((audio, press.get("items", [])))
 
     def _short_press(self):
-        """Short tap: stash the selection if there is one, otherwise a normal middle click."""
+        """Short tap: stash a selection, else paste what is stashed, else a plain middle click."""
         selection = self._grab_selection(timeout=0.25)
-        if not selection:
-            self.mouse.click(mouse.Button.middle)
+        if selection:
+            count, chars = self._stash_add(selection)
+            print(t("stash_log", count=count, chars=chars))
+            self.overlay.post("stash", t("ov_stash_sub", count=count, chars=chars))
+            beep((1000, 60))
             return
+
+        items = self._stash_take()
+        if items:
+            if self._deliver("\n\n".join(items), items):
+                self.last_sent = set(items)
+                print(t("paste_log", count=len(items)))
+                self.overlay.post("done")
+                beep((660, 60))
+            return
+
+        self.mouse.click(mouse.Button.middle)
+
+    # ---- the stash: text picked up with taps, dropped with a tap or with your voice ----
+    def _stash_add(self, text):
+        """Pick text up. Returns the new (count, chars)."""
         with self.stash_lock:
-            if selection not in self.stash:
-                self.stash.append(selection)
+            if text not in self.stash:
+                self.stash.append(text)
             self.stash_time = time.time()
-            count = len(self.stash)
-            chars = sum(len(x) for x in self.stash)
-        print(t("stash_log", count=count, chars=chars))
-        self.overlay.post("stash", t("ov_stash_sub", count=count, chars=chars))
-        beep((1000, 60))
+            count, chars = len(self.stash), sum(len(x) for x in self.stash)
+        self._sync_chip()
+        return count, chars
+
+    def _stash_take(self):
+        """Hand over everything stashed and clear it, dropping it if it went stale."""
+        with self.stash_lock:
+            if self.stash and time.time() - self.stash_time > STASH_EXPIRE_SEC:
+                self.stash = []
+            items, self.stash = self.stash, []
+        self._sync_chip()
+        return items
 
     def _restore_stash(self, items):
-        """If a voice input fails, put the stashed text back so it isn't lost."""
+        """Put text back when it could not be delivered, so it is never lost."""
         if not items:
             return
         with self.stash_lock:
             self.stash = items + [x for x in self.stash if x not in items]
             self.stash_time = time.time()
+        self._sync_chip()
+
+    def _sync_chip(self):
+        """Keep the cursor-side chip in step with what is stashed."""
+        with self.stash_lock:
+            count, chars = len(self.stash), sum(len(x) for x in self.stash)
+        self.overlay.set_stash(t("ov_chip", count=count, chars=chars) if count else "")
 
     # ---- read the current selection ----
     def _grab_selection(self, timeout=0.4):
@@ -816,9 +904,9 @@ class SophieVoiceMouse:
             text = f"{attached}\n\n{text}" if SELECTION_POSITION == "before" else f"{text}\n\n{attached}"
             self.last_sent = set(items)
 
-        self._paste(text)
-        self.overlay.post("done")
-        print(t("done_log"))
+        if self._deliver(text, [text]):
+            self.overlay.post("done")
+            print(t("done_log"))
 
     def _refine(self, text):
         """Clean up with the AI. Falls back to the raw transcript on any failure."""
@@ -843,6 +931,25 @@ class SophieVoiceMouse:
         if refined:
             print(t("cleaned", text=refined))
         return refined or text
+
+    def _own_console_focused(self):
+        """True while our own console window has the keyboard focus: pasting there is pointless."""
+        try:
+            console = kernel32.GetConsoleWindow()
+            return bool(console) and user32.GetForegroundWindow() == console
+        except Exception:
+            return False
+
+    def _deliver(self, text, keep):
+        """Type the text where the user is working. Stashes `keep` instead if there is nowhere to."""
+        if self._own_console_focused():
+            self._restore_stash(keep)
+            print(t("held_log"))
+            self.overlay.post("wait", t("ov_wait_sub"))
+            beep((520, 70), (420, 70))
+            return False
+        self._paste(text)
+        return True
 
     def _paste(self, text):
         try:

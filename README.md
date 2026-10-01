@@ -12,9 +12,12 @@ Sophie Voice Mouse turns the mouse you already own into a voice input device for
 |---|---|
 | **Hold** the middle button, speak, **release** | What you said is typed at the cursor |
 | Select text, then **tap** the middle button | That text is stashed (tap again to stash more) |
+| With text stashed, **tap** with nothing selected | The stashed text is pasted — no keyboard needed |
 | With text stashed, **hold and speak** | Your words + the stashed text are typed together, and the stash is cleared |
 | Select text and **hold right away** | Your words + the selection are typed together |
-| **Tap** with nothing selected | A normal middle click (open link in new tab, etc.) |
+| **Tap** with nothing selected and nothing stashed | A normal middle click (open link in new tab, etc.) |
+
+A tap picks text up and a tap puts it down, so you never need the keyboard.
 
 Example: select an error message on a web page → **tap** → click into your AI chat box → hold and say *"why am I getting this?"* → release:
 
@@ -24,7 +27,9 @@ Why am I getting this?
 TypeError: cannot read property 'map' of undefined
 ```
 
-A small bubble next to your cursor shows what's happening: listening, how much text is attached, working, done.
+A small bubble next to your cursor shows what's happening: listening, how much text is attached, working, done. While anything is stashed, a chip stays next to your cursor so you can see that a tap will paste rather than middle-click.
+
+**Text goes to the window that has the keyboard focus** — not to whatever the mouse is hovering over. Click into the chat box or editor first, then hold the button. The app's own console window is the one exception: nothing is ever typed into it. If it has the focus when your words are ready, they are stashed instead and the bubble asks you to click where you want them.
 
 ## Features
 
@@ -90,6 +95,7 @@ Edit the `Settings` block at the top of `sophie_voice_mouse.py`:
 - **Terminals** (Command Prompt, PowerShell, Windows Terminal): Ctrl+C stops programs there, so text is never auto-copied in a terminal. Copy it yourself.
 - **Middle-button autoscroll** (hold and drag in a browser) no longer works, because holding the button means "record".
 - If text is selected on a page and you middle-click a link, the text gets stashed instead of opening a new tab. Deselect first.
+- While anything is stashed, a tap pastes it instead of middle-clicking. Paste it (or wait 10 minutes for it to expire) to get middle click back. The chip next to your cursor tells you when this is the case.
 - **Admin windows**: Windows blocks input into apps running as administrator. Run Sophie Voice Mouse as administrator too if you need that.
 - Some antivirus tools are wary of apps that watch the mouse and keyboard. The full source is here so you can check exactly what it does.
 
