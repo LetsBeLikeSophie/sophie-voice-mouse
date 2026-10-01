@@ -1,0 +1,57 @@
+name: Build Windows app
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build with PyInstaller
+        run: >
+          pyinstaller sophie_voice_mouse.py --noconfirm --onedir --console --name SophieVoiceMouse
+          --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime
+          --collect-all av --collect-all _sounddevice_data
+          --hidden-import pynput.mouse._win32 --hidden-import pynput.keyboard._win32
+          --hidden-import keyring.backends.Windows
+
+      - name: Check the built app starts
+        run: dist\SophieVoiceMouse\SophieVoiceMouse.exe --selftest
+
+      - name: Add launchers and docs
+        shell: pwsh
+        run: |
+          Copy-Item README.md, README.ko.md, LICENSE dist\SophieVoiceMouse\
+          Set-Content -Path "dist\SophieVoiceMouse\Change API key.bat" -Value "@echo off`r`ncd /d `"%~dp0`"`r`nSophieVoiceMouse.exe --set-key`r`npause" -Encoding ascii
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\SophieVoiceMouse -DestinationPath SophieVoiceMouse-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SophieVoiceMouse-windows
+          path: SophieVoiceMouse-windows.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SophieVoiceMouse-windows.zip
+          generate_release_notes: true
