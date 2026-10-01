@@ -105,4 +105,6 @@ TypeError: cannot read property 'map' of undefined
 
 ## 라이선스
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Copyright (c) 2026 Sophie ([@LetsBeLikeSophie](https://github.com/LetsBeLikeSophie)).
+
+만든 사람은 Sophie예요. 가져다 쓰실 때 [이 저장소](https://github.com/LetsBeLikeSophie/sophie-voice-mouse) 링크를 남겨주시면 고마워요.

@@ -105,4 +105,6 @@ Push a tag like `v0.1.0` and GitHub Actions builds `SophieVoiceMouse-windows.zip
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — Copyright (c) 2026 Sophie ([@LetsBeLikeSophie](https://github.com/LetsBeLikeSophie)).
+
+Made by Sophie. If you build on it, a link back to [this repository](https://github.com/LetsBeLikeSophie/sophie-voice-mouse) is appreciated.

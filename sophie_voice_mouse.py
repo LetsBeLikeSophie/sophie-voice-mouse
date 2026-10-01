@@ -17,6 +17,10 @@ API key (optional) / API 키 (선택)
     처음 실행 때 Claude, OpenAI, Gemini 키 중 하나를 붙여넣으면 회사를 자동으로 알아내요.
   - Stored in Windows Credential Manager, never in a file. / 키는 Windows 자격 증명 관리자에 저장
   - Change key: --set-key   Remove key: --clear-key
+
+Created by Sophie (@LetsBeLikeSophie) — https://github.com/LetsBeLikeSophie/sophie-voice-mouse
+만든 사람: Sophie (@LetsBeLikeSophie)
+MIT licensed. / MIT 라이선스.
 """
 
 import os
@@ -40,6 +44,9 @@ from pynput import mouse, keyboard
 from faster_whisper import WhisperModel
 
 __version__ = "0.1.0"
+__author__ = "Sophie (@LetsBeLikeSophie)"
+__license__ = "MIT"
+__url__ = "https://github.com/LetsBeLikeSophie/sophie-voice-mouse"
 # ================= Settings / 설정 =================
 MODE = "clean"                 # "clean"   = keep your words, fix punctuation & fillers (default)
                                # "dictate" = raw transcript, no AI
@@ -878,7 +885,7 @@ class SophieVoiceMouse:
 
 def selftest():
     """Used by the build pipeline: checks that every bundled piece loads."""
-    print(f"Sophie Voice Mouse {__version__}")
+    print(f"Sophie Voice Mouse {__version__} — by {__author__}")
     try:
         import faster_whisper.vad as vad
         if hasattr(vad, "get_vad_model"):
@@ -897,7 +904,8 @@ def selftest():
 def main():
     global LANG
     if "--version" in sys.argv:
-        print(f"Sophie Voice Mouse {__version__}")
+        print(f"Sophie Voice Mouse {__version__} — by {__author__}")
+        print(f"{__url__}  ({__license__} licensed)")
         return
     if "--selftest" in sys.argv:
         sys.exit(selftest())
@@ -907,6 +915,7 @@ def main():
         sys.exit(1)
 
     LANG = detect_ui_lang()
+    print(f"Sophie Voice Mouse {__version__} — by {__author__}  ·  {__url__}")
 
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)  # correct positions on high-DPI screens
